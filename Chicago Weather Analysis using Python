@@ -1,1 +1,177 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
+import matplotlib.dates as mdates
 
+weather_data = pd.read_csv("Chicago Weather Data 2021-24.csv")
+weather_data.head(10)
+weather_data.info()
+
+def convert_date_time(row):
+    year = int(row['YEAR']) #converting datatypes of the variables
+    month = int(row['MO'])
+    day = int(row['DY'])
+    hour = int(row['HR'])
+
+    dt = datetime(year, month, day, hour)
+    date_formatted = dt.strftime('%m/%d/%Y')
+    time_formatted = dt.strftime('%I %p')
+    return pd.Series([date_formatted, time_formatted])
+
+weather_data[['DATE', 'TIME']] = weather_data.apply(convert_date_time, axis=1)
+
+cols = ['DATE', 'TIME'] + [col for col in weather_data.columns if col not in ['DATE', 'TIME', 'MO', 'DY', 'HR', 'YEAR']]
+weather_data = weather_data[cols]
+print(weather_data)
+
+weather_data.describe()
+weather_data.replace(-999, np.nan, inplace=True) #removing outliers
+weather_data.dropna(inplace=True)
+weather_data.describe()
+
+#Rainy Hours each month
+
+weather_data['DATE'] = pd.to_datetime(weather_data['DATE'])
+weather_data['Rain'] = (weather_data['PRCP'] > 0) & (weather_data['TEMP'] > 0)
+rainy_days_per_month = weather_data.groupby(pd.Grouper(key='DATE', freq='M'))['Rain'].sum()
+rainy_days_per_month.index = rainy_days_per_month.index.strftime('%Y-%m')
+rainy_days_per_month['2021-04':'2024-07'].plot(kind='bar', figsize=(12, 8), color='skyblue')
+plt.title("Number of Rainy Hours Per Month (2021-2024)")
+plt.xlabel("Month-Year", fontsize=12)
+plt.ylabel("Rainy Hours Count", fontsize=12)
+plt.grid(axis='y')
+plt.xticks(rotation=45)
+plt.show()
+
+#Weekly Average Wind Speed
+weather_data['DATE'] = pd.to_datetime(weather_data['DATE'])
+monthly_avg_wind_speed = weather_data.groupby(pd.Grouper(key='DATE', freq='M'))['WND_SPD'].mean()
+plt.figure(figsize=(18, 8))
+plt.plot(monthly_avg_wind_speed.index, monthly_avg_wind_speed.values, color='grey', linewidth=3)
+plt.ylim(bottom=0)
+plt.xlim(left=pd.to_datetime('2021-04-01'), right=pd.to_datetime('2024-07-31'))
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+plt.xticks(rotation=45)
+plt.xlabel('Month', fontsize=14)
+plt.ylabel('Wind Speed (mph)', fontsize=14)
+plt.title('Monthly Average Wind Speed Over Time', fontsize=18)
+plt.grid(axis='y')
+plt.grid(axis='x')
+plt.tight_layout()
+plt.show()
+
+#Monthly Temperature Heatmap
+heatmap_data = pd.pivot_table(weather_data, values='TEMP', index=weather_data['DATE'].dt.month, columns=weather_data['DATE'].dt.year)
+heatmap_data.index = [pd.to_datetime(str(month), format='%m').strftime('%B') for month in heatmap_data.index]
+plt.figure(figsize=(12, 8))
+sns.heatmap(heatmap_data, cmap='coolwarm', annot=True, fmt=".1f", linewidths=.5, cbar_kws={'label': 'Temperature (°C)'}, vmin=-10, vmax=30, center=20)
+plt.title('Monthly Temperature Heatmap (2021-2024)', fontsize=16)
+plt.xlabel('Year', fontsize=14)
+plt.ylabel('Month', fontsize=14)
+plt.yticks(rotation=0)
+plt.tight_layout()
+plt.show()
+
+#Monthly temperature differences
+
+filtered_data = weather_data[weather_data['DATE'].dt.year.isin([2021, 2022, 2023, 2024])]
+plt.figure(figsize=(10, 5))
+sns.boxplot(data=filtered_data, x=filtered_data['DATE'].dt.month, y='TEMP', hue=filtered_data['DATE'].dt.year, palette='Oranges')
+plt.title('Monthly Temperature Variation (2021-2024)')
+plt.xlabel('Month')
+plt.ylabel('Temperature (C)')
+plt.xticks(ticks=range(12), labels=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+plt.grid(True)
+plt.show()
+
+#Temperature and Humidity Heatmap
+
+filtered_data = weather_data[weather_data['DATE'].dt.year.isin([2021, 2022, 2023, 2024])]
+plt.figure(figsize=(10, 6))
+hexbin = plt.hexbin(weather_data['TEMP'], weather_data['HMDT'], gridsize=20, mincnt=5)
+color = plt.colorbar(hexbin)
+color.set_label('Count of Data Points')
+plt.title('Temperature vs. Humidity Heat Map (2021-2024)')
+plt.xlabel('Temperature (C)')
+plt.ylabel('Humidity')
+plt.show()
+
+#Median Atomspheric Pressure (2021-2025)
+
+new_data = weather_data[weather_data['DATE'].dt.year.isin([2021, 2022, 2023, 2024])]
+weather_data['MO'] = weather_data['DATE'].dt.to_period('M')
+monthly_median_pressure = weather_data.groupby('MO')['ATM_PRESS'].median()
+plt.figure(figsize=(10, 5))
+monthly_median_pressure.plot(kind='line', marker='^')
+plt.title('Monthly Median Atmospheric Pressure (2021-2024)')
+plt.xlabel('Month-Year', fontsize=12)
+plt.ylabel('Median Atmospheric Pressure')
+plt.grid(True)
+plt.show()
+
+# Seasonal temperature trends using a FacetGrid
+
+plt.figure(figsize=(16, 10))
+weather_data['month_name'] = pd.to_datetime(weather_data['MO'], format='%m').dt.strftime('%B')  # Convert month to names
+g = sns.FacetGrid(weather_data, col="month_name", col_wrap=4, height=4, sharey=False)
+g.map(sns.lineplot, 'HR', 'TEMP', color='blue', alpha=0.7)
+g.set_axis_labels("Hour of Day", "Temperature (°C)")
+g.set_titles("{col_name}")
+plt.subplots_adjust(top=0.9)
+g.fig.suptitle("Hourly Temperature Trends Across Months", fontsize=16)
+plt.show()
+
+# Heatmap: Correlation between variables
+plt.figure(figsize=(10, 8))
+correlation = weather_data[['TEMP', 'PRCP', 'HMDT', 'WND_SPD', 'ATM_PRESS']].corr()
+sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
+plt.title('Correlation Heatmap')
+plt.show()
+
+
+weather_data.dropna(subset=['MO', 'WND_SPD'], inplace=True)
+
+# Box plot for wind speed by month
+plt.figure(figsize=(10, 6))
+sns.boxplot(x='MO', y='WND_SPD', hue='MO', data=weather_data, palette='coolwarm', dodge=False)
+plt.title('Wind Speed by Month', fontsize=16)
+plt.xlabel('Month', fontsize=12)
+plt.ylabel('Wind Speed (mph)', fontsize=12)
+plt.xticks(ticks=range(12), labels=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+# Convert 'MO' column to integers if it's a period type
+if pd.api.types.is_period_dtype(weather_data['MO']):
+    weather_data['MO'] = weather_data['MO'].dt.month
+
+weather_data = weather_data[weather_data['MO'].between(1, 12)]
+# Calculate monthly averages for temperature and wind speed
+avg_temp = weather_data.groupby('MO')['TEMP'].mean()
+avg_wind_speed = weather_data.groupby('MO')['WND_SPD'].mean()
+avg_temp = avg_temp.reindex(range(1, 13), fill_value=0)
+avg_wind_speed = avg_wind_speed.reindex(range(1, 13), fill_value=0)
+
+# Butterfly chart
+plt.figure(figsize=(12, 6))
+months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# Plot average temperature
+plt.barh(months, avg_temp.values, color='tomato', label='Avg Temperature (°C)', align='center')
+
+# Plot average wind speed
+plt.barh(months, -avg_wind_speed.values, color='skyblue', label='Avg Wind Speed (mph)', align='center')
+
+# Add labels and title
+plt.title('Monthly Avg Temperature vs Wind Speed', fontsize=16)
+plt.xlabel('Values', fontsize=12)
+plt.ylabel('Months', fontsize=12)
+plt.axvline(0, color='black', linewidth=0.8)  # Add vertical line at 0
+plt.legend()
+plt.tight_layout()
+plt.show()
